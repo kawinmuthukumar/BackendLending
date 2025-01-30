@@ -12,31 +12,36 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-app.use(express.json());
+
+// CORS configuration
 app.use(cors());
 
-// Serve static files from the public directory
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/scripts', express.static(path.join(__dirname, 'scripts')));
-app.use('/styles', express.static(path.join(__dirname, 'styles')));
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // MongoDB URI
-const dbURI = "mongodb+srv://kawin:saipranavika17@kawin.lozfqbm.mongodb.net/LendingDB?retryWrites=true&w=majority";
+const dbURI = process.env.MONGODB_URI || "mongodb+srv://kawin:saipranavika17@kawin.lozfqbm.mongodb.net/LendingDB?retryWrites=true&w=majority";
+
+// Port configuration
+const PORT = process.env.PORT || 3000;
 
 // Connect to MongoDB
 const startServer = async () => {
     try {
-        await mongoose.connect(dbURI, { useNewUrlParser: true, useUnifiedTopology: true });
+        await mongoose.connect(dbURI, { 
+            useNewUrlParser: true, 
+            useUnifiedTopology: true 
+        });
         console.log("Connected to the database successfully");
 
         // Start the server
-        app.listen(3000, () => {
-            console.log("Server is running on port 3000");
-            console.log("Access the application at: http://localhost:3000");
+        app.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
         });
     } catch (err) {
         console.error("Database connection failed:", err);
-        process.exit(1); // Exit the application on failure
+        process.exit(1);
     }
 };
 
@@ -76,89 +81,105 @@ const transactionSchema = new mongoose.Schema({
 });
 const Transaction = mongoose.model("Transaction", transactionSchema);
 
-// API Routes
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({ message: 'Welcome to LendingApp API' });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date() });
+});
 
 // User Routes
-// Register User
-app.post("/api/register", async (req, res) => {
+app.post("/api/users/register", async (req, res) => {
     try {
         console.log('Received registration request:', req.body);
-        const { name, email, password, id } = req.body;
+        const { name, email, password } = req.body;
         
         if (!name || !email || !password) {
             console.log('Missing required fields:', { name: !!name, email: !!email, password: !!password });
             return res.status(400).json({ message: "All fields are required" });
         }
 
-        console.log('Checking for existing user with email:', email);
         const existingUser = await User.findOne({ email });
         if (existingUser) {
-            console.log('User already exists with email:', email);
             return res.status(409).json({ message: "Email already in use" });
         }
 
-        // Hash the password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
+        const userId = uuid();
 
-        // Use provided id or generate new one
-        const userId = id || uuid();
-        console.log('Creating new user with ID:', userId);
-        const newUser = new User({ id: userId, name, email, password: hashedPassword });
-        
-        try {
-            const savedUser = await newUser.save();
-            console.log('User saved successfully:', savedUser);
-            res.status(201).json({ message: "User registered successfully", data: savedUser });
-        } catch (saveError) {
-            console.error('Error saving user to database:', saveError);
-            throw saveError;
-        }
-    } catch (err) {
-        console.error("Error registering user:", err);
-        console.error("Full error details:", {
-            message: err.message,
-            stack: err.stack,
-            name: err.name
+        const newUser = new User({ 
+            id: userId, 
+            name, 
+            email, 
+            password: hashedPassword 
         });
-        res.status(500).json({ message: "Failed to register user: " + err.message });
+        
+        const savedUser = await newUser.save();
+        
+        res.status(201).json({ 
+            message: "User registered successfully",
+            userId: savedUser.id,
+            name: savedUser.name,
+            email: savedUser.email
+        });
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ message: "Registration failed. Please try again." });
     }
 });
 
-// Login User
+// Login Route
 app.post("/api/users/login", async (req, res) => {
     try {
-        console.log('Login attempt received:', req.body);
         const { email, password } = req.body;
-        
-        if (!email || !password) {
-            console.log('Missing email or password');
-            return res.status(400).json({ message: "Email and password are required" });
-        }
-
         const user = await User.findOne({ email });
-        console.log('User found:', user ? 'Yes' : 'No');
-
+        
         if (!user) {
             return res.status(401).json({ message: "Invalid email or password" });
         }
-
-        // Compare password with hashed password
-        const isValidPassword = await bcrypt.compare(password, user.password);
-        if (!isValidPassword) {
+        
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) {
             return res.status(401).json({ message: "Invalid email or password" });
         }
+        
+        res.json({
+            message: "Login successful",
+            userId: user.id,
+            name: user.name,
+            email: user.email
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ message: "Login failed. Please try again." });
+    }
+});
 
-        console.log('Login successful for user:', user.email);
-        res.json({ 
-            message: "Login successful", 
+// Get User Details
+app.get("/api/users/:userId", async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log('Fetching user details for:', userId);
+
+        const user = await User.findOne({ id: userId });
+        if (!user) {
+            console.log('User not found:', userId);
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        console.log('User found:', user.email);
+        res.json({
             userId: user.id,
             name: user.name,
             email: user.email
         });
     } catch (err) {
-        console.error('Login error:', err);
-        res.status(500).json({ message: "Error logging in", error: err.message });
+        console.error('Error fetching user:', err);
+        res.status(500).json({ message: 'Error fetching user details' });
     }
 });
 
@@ -568,9 +589,15 @@ app.post("/api/transactions/cancel", async (req, res) => {
     }
 });
 
-// Serve index.html for all other routes
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ message: 'Something went wrong!' });
+});
+
+// Handle 404
+app.use((req, res) => {
+    res.status(404).json({ message: 'Route not found' });
 });
 
 // Start the server
