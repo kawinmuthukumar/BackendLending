@@ -13,12 +13,18 @@ const __dirname = dirname(__filename);
 
 const app = express();
 
-// CORS configuration with specific origins
+// CORS configuration
 app.use(cors({
-    origin: ['https://lendingapp-frontend.onrender.com', 'http://localhost:5173'],
+    origin: '*',  // Allow all origins temporarily for development
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    preflightContinue: true,
+    optionsSuccessStatus: 204
 }));
+
+// Handle preflight requests
+app.options('*', cors());
 
 // Middleware
 app.use(express.json());
