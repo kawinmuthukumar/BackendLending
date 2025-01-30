@@ -27,8 +27,8 @@ app.use(express.urlencoded({ extended: true }));
 // MongoDB URI
 const dbURI = process.env.MONGODB_URI || "mongodb+srv://kawin:saipranavika17@kawin.lozfqbm.mongodb.net/LendingDB?retryWrites=true&w=majority";
 
-// Port configuration
-const PORT = process.env.PORT || 3000;
+// Port configuration - use PORT from environment or default to 10000
+const PORT = process.env.PORT || 10000;
 
 // Connect to MongoDB
 let isConnected = false;
@@ -672,12 +672,22 @@ app.use((req, res) => {
     });
 });
 
-// Start server only if not running in Vercel
-if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-    });
-}
+// Connect to MongoDB and start server
+const startServer = async () => {
+    try {
+        await connectDB();
+        console.log('Connected to MongoDB successfully');
 
-// For Vercel
-export default app;
+        // Start the server and bind to 0.0.0.0 to accept all incoming connections
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`Server is running on port ${PORT}`);
+            console.log(`MongoDB connection status: ${mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'}`);
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+        process.exit(1);
+    }
+};
+
+// Start the server
+startServer();
