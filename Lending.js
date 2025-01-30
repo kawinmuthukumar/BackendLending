@@ -13,8 +13,12 @@ const __dirname = dirname(__filename);
 
 const app = express();
 
-// CORS configuration
-app.use(cors());
+// CORS configuration with specific origins
+app.use(cors({
+    origin: ['https://lendingapp-frontend.onrender.com', 'http://localhost:5173'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true
+}));
 
 // Middleware
 app.use(express.json());
@@ -27,21 +31,21 @@ const dbURI = process.env.MONGODB_URI || "mongodb+srv://kawin:saipranavika17@kaw
 const PORT = process.env.PORT || 3000;
 
 // Connect to MongoDB
-const startServer = async () => {
-    try {
-        await mongoose.connect(dbURI, { 
-            useNewUrlParser: true, 
-            useUnifiedTopology: true 
-        });
-        console.log("Connected to the database successfully");
+let isConnected = false;
 
-        // Start the server
-        app.listen(PORT, () => {
-            console.log(`Server is running on port ${PORT}`);
+const connectDB = async () => {
+    if (isConnected) return;
+
+    try {
+        await mongoose.connect(dbURI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true
         });
-    } catch (err) {
-        console.error("Database connection failed:", err);
-        process.exit(1);
+        isConnected = true;
+        console.log('MongoDB connected successfully');
+    } catch (error) {
+        console.error('MongoDB connection error:', error);
+        throw error;
     }
 };
 
@@ -88,18 +92,27 @@ app.get('/', (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date() });
+    res.json({ 
+        status: 'ok',
+        dbStatus: isConnected ? 'connected' : 'disconnected',
+        timestamp: new Date()
+    });
 });
 
 // User Routes
 app.post("/api/users/register", async (req, res) => {
     try {
+        await connectDB();
+        
         console.log('Received registration request:', req.body);
         const { name, email, password } = req.body;
         
         if (!name || !email || !password) {
             console.log('Missing required fields:', { name: !!name, email: !!email, password: !!password });
-            return res.status(400).json({ message: "All fields are required" });
+            return res.status(400).json({ 
+                message: "All fields are required",
+                received: { name: !!name, email: !!email, password: !!password }
+            });
         }
 
         const existingUser = await User.findOne({ email });
@@ -128,13 +141,18 @@ app.post("/api/users/register", async (req, res) => {
         });
     } catch (error) {
         console.error('Registration error:', error);
-        res.status(500).json({ message: "Registration failed. Please try again." });
+        res.status(500).json({ 
+            message: "Registration failed. Please try again.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 
 // Login Route
 app.post("/api/users/login", async (req, res) => {
     try {
+        await connectDB();
+        
         const { email, password } = req.body;
         const user = await User.findOne({ email });
         
@@ -155,13 +173,18 @@ app.post("/api/users/login", async (req, res) => {
         });
     } catch (error) {
         console.error('Login error:', error);
-        res.status(500).json({ message: "Login failed. Please try again." });
+        res.status(500).json({ 
+            message: "Login failed. Please try again.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 
 // Get User Details
 app.get("/api/users/:userId", async (req, res) => {
     try {
+        await connectDB();
+        
         const { userId } = req.params;
         console.log('Fetching user details for:', userId);
 
@@ -179,18 +202,26 @@ app.get("/api/users/:userId", async (req, res) => {
         });
     } catch (err) {
         console.error('Error fetching user:', err);
-        res.status(500).json({ message: 'Error fetching user details' });
+        res.status(500).json({ 
+            message: 'Error fetching user details',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
 // Get All Users
 app.get("/api/users", async (req, res) => {
     try {
+        await connectDB();
+        
         const users = await User.find();
         res.status(200).json(users);
     } catch (err) {
         console.error("Error fetching users:", err);
-        res.status(500).json({ message: "Failed to fetch users" });
+        res.status(500).json({ 
+            message: "Failed to fetch users",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
@@ -198,6 +229,8 @@ app.get("/api/users", async (req, res) => {
 // Add Item
 app.post("/api/items", async (req, res) => {
     try {
+        await connectDB();
+        
         const { name, description, ownerId } = req.body;
         
         if (!name || !description || !ownerId) {
@@ -232,13 +265,18 @@ app.post("/api/items", async (req, res) => {
         });
     } catch (err) {
         console.error('Error creating item:', err);
-        res.status(500).json({ message: "Failed to create item", error: err.message });
+        res.status(500).json({ 
+            message: "Failed to create item",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
 // Get all items with owner details
 app.get("/api/items", async (req, res) => {
     try {
+        await connectDB();
+        
         console.log('Fetching items...');
         const items = await Item.find().lean();
         console.log('Found items:', items);
@@ -278,13 +316,18 @@ app.get("/api/items", async (req, res) => {
         res.json(itemsWithOwners);
     } catch (err) {
         console.error('Error fetching items:', err);
-        res.status(500).json({ message: "Error fetching items", error: err.message });
+        res.status(500).json({ 
+            message: "Error fetching items",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
 // Update Item Availability
 app.put("/api/items/:id", async (req, res) => {
     try {
+        await connectDB();
+        
         const { id } = req.params;
         const { available } = req.body;
         
@@ -305,7 +348,10 @@ app.put("/api/items/:id", async (req, res) => {
         res.status(200).json({ message: "Item updated successfully", data: updatedItem });
     } catch (err) {
         console.error("Error updating item:", err);
-        res.status(500).json({ message: "Failed to update item" });
+        res.status(500).json({ 
+            message: "Failed to update item",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
@@ -313,6 +359,8 @@ app.put("/api/items/:id", async (req, res) => {
 // Create Transaction (Borrow Request)
 app.post("/api/transactions", async (req, res) => {
     try {
+        await connectDB();
+        
         const { itemId, borrowerId } = req.body;
         
         // Find the item first
@@ -362,8 +410,8 @@ app.post("/api/transactions", async (req, res) => {
     } catch (err) {
         console.error('Transaction error:', err);
         res.status(500).json({ 
-            message: "Error creating borrow request", 
-            error: err.message 
+            message: "Error creating borrow request",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
     }
 });
@@ -371,17 +419,24 @@ app.post("/api/transactions", async (req, res) => {
 // Get All Transactions
 app.get("/api/transactions", async (req, res) => {
     try {
+        await connectDB();
+        
         const transactions = await Transaction.find();
         res.status(200).json(transactions);
     } catch (err) {
         console.error("Error fetching transactions:", err);
-        res.status(500).json({ message: "Failed to fetch transactions" });
+        res.status(500).json({ 
+            message: "Failed to fetch transactions",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
 // Get Transactions for User
 app.get("/api/transactions/user/:userId", async (req, res) => {
     try {
+        await connectDB();
+        
         const { userId } = req.params;
         console.log('Fetching transactions for user:', userId);
         
@@ -443,13 +498,18 @@ app.get("/api/transactions/user/:userId", async (req, res) => {
         res.status(200).json(enrichedTransactions);
     } catch (err) {
         console.error("Error fetching transactions:", err);
-        res.status(500).json({ message: "Failed to fetch transactions" });
+        res.status(500).json({ 
+            message: "Failed to fetch transactions",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
 // Update Transaction Status (Approve/Reject)
 app.put("/api/transactions/:id", async (req, res) => {
     try {
+        await connectDB();
+        
         const { id } = req.params;
         const { status, userId } = req.body;
         console.log('Updating transaction:', id, 'to status:', status);
@@ -488,13 +548,18 @@ app.put("/api/transactions/:id", async (req, res) => {
         });
     } catch (err) {
         console.error("Error updating transaction:", err);
-        res.status(500).json({ message: "Failed to update request" });
+        res.status(500).json({ 
+            message: "Failed to update request",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
 // Cancel Borrow Request or Return Item
 app.post("/api/transactions/cancel", async (req, res) => {
     try {
+        await connectDB();
+        
         const { itemId, borrowerId } = req.body;
         console.log('Cancel/Return request:', { itemId, borrowerId });
         
@@ -583,22 +648,36 @@ app.post("/api/transactions/cancel", async (req, res) => {
     } catch (err) {
         console.error('Error in cancel/return:', err);
         res.status(500).json({ 
-            message: "Error processing request", 
-            error: err.message 
+            message: "Error processing request",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
     }
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ message: 'Something went wrong!' });
+    console.error('Error:', err);
+    res.status(500).json({ 
+        message: 'Something went wrong!',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
 });
 
 // Handle 404
 app.use((req, res) => {
-    res.status(404).json({ message: 'Route not found' });
+    res.status(404).json({ 
+        message: 'Route not found',
+        path: req.path,
+        method: req.method
+    });
 });
 
-// Start the server
-startServer();
+// Start server only if not running in Vercel
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
+
+// For Vercel
+export default app;
